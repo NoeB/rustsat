@@ -61,6 +61,7 @@ v2-0-0 = ["git"]
 v2-1-0 = ["git"]
 v2-1-1 = ["git"]
 v2-1-2 = ["git"]
+v2-2-0 = ["git"]
 v2-1-3 = []
 
 [dependencies]
