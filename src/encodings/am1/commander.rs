@@ -25,7 +25,7 @@ use crate::{
 ///
 /// - Will Klieber and Gihwon Kwon: _Efficient CNF Encoding for Selecting 1 from N Objects, CFV
 ///   2007.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Commander<const N: usize = 4, Sub = super::Pairwise> {
     /// Input literals
@@ -59,7 +59,7 @@ where
         let prev_clauses = collector.n_clauses();
         let prev_vars = var_manager.n_used();
 
-        let n_splits = (self.in_lits.len() + N - 1) / N;
+        let n_splits = self.in_lits.len().div_ceil(N);
 
         let commanders: Vec<_> = (0..n_splits).map(|_| var_manager.new_lit()).collect();
 
@@ -125,5 +125,24 @@ impl<const N: usize, Sub> FromIterator<Lit> for Commander<N, Sub> {
 impl<const N: usize, Sub> Extend<Lit> for Commander<N, Sub> {
     fn extend<T: IntoIterator<Item = Lit>>(&mut self, iter: T) {
         self.in_lits.extend(iter);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        encodings::am1::Encode,
+        instances::{BasicVarManager, Cnf, ManageVars},
+        lit, var,
+    };
+
+    #[test]
+    fn basic() {
+        let mut enc: super::Commander = [lit![0], lit![1], lit![2], lit![3]].into_iter().collect();
+        let mut cnf = Cnf::new();
+        let mut vm = BasicVarManager::from_next_free(var![4]);
+        enc.encode(&mut cnf, &mut vm).unwrap();
+        assert_eq!(vm.n_used(), 5);
+        assert_eq!(cnf.len(), 10);
     }
 }

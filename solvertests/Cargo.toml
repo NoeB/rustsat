@@ -1,9 +1,13 @@
 [package]
 name = "rustsat-solvertests"
 description = "Test code shared between sat solver crates"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+
+# This is only a dev dependency in this repo
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

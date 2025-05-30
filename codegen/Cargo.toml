@@ -1,0 +1,18 @@
+[package]
+name = "rustsat-codegen"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+# This is only intended to be used in this repo
+publish = false
+
+[dependencies]
+cbindgen = "0.29.0"
+minijinja = { version = "2.10.2", default-features = false, features = [
+  "multi_template",
+  "serde",
+  "loader",
+] }
+serde.workspace = true

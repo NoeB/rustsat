@@ -1,0 +1,19 @@
+[default]
+# disable spellcheck for specific lines with trailing `// spellchecker:disable-line`
+extend-ignore-re = ["(?Rm)^.*(#|//)\\s*spellchecker:disable-line$"]
+
+[default.extend-words]
+lits = "lits"
+Thay = "Thay"
+Ines = "Ines"
+Linz = "Linz"
+
+[files]
+extend-exclude = [
+  "data/**",
+  "cadical/cppsrc/**",
+  "cadical/patches/**",
+  "glucose/cppsrc/**",
+  "kissat/csrc/**",
+  "minisat/cppsrc/**",
+]

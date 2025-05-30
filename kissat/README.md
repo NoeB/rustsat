@@ -1,7 +1,6 @@
-[![Check & Test](https://github.com/chrjabs/rustsat/actions/workflows/kissat.yml/badge.svg)](https://github.com/chrjabs/rustsat/actions/workflows/kissat.yml)
-[![crates.io](https://img.shields.io/crates/v/rustsat-kissat)](https://crates.io/crates/rustsat-kissat)
-[![docs.rs](https://img.shields.io/docsrs/rustsat-kissat)](https://docs.rs/rustsat-kissat)
-[![License](https://img.shields.io/crates/l/rustsat-kissat)](../LICENSE)
+[![crates.io](https://img.shields.io/crates/v/rustsat-kissat?style=for-the-badge&logo=rust)](https://crates.io/crates/rustsat-kissat)
+[![docs.rs](https://img.shields.io/docsrs/rustsat-kissat?style=for-the-badge&logo=docsdotrs)](https://docs.rs/rustsat-kissat)
+[![License](https://img.shields.io/crates/l/rustsat-kissat?style=for-the-badge)](../LICENSE)
 
 <!-- cargo-rdme start -->
 
@@ -42,5 +41,18 @@ which requires network access.
 In order to build a custom version of Kissat, this crate supports the `KISSAT_SRC_DIR`
 environment variable.
 If this is set, Kissat will be built from the path specified there.
+
+## Minimum Supported Rust Version (MSRV)
+
+Currently, the MSRV is 1.77.0, the plan is to always support an MSRV that is at least a year
+old.
+
+Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+sure to pin a precise version of RustSAT.
+
+Note that the specified minimum-supported Rust version only applies if the _newest_ version of
+Kissat is build.
+Older versions are pulled down via the [`git2`](https://crates.io/crates/git2) crate, which has
+transitive dependencies that have a higher MSRV.
 
 <!-- cargo-rdme end -->

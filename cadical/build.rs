@@ -1,11 +1,10 @@
 #![warn(clippy::pedantic)]
 
-use git2::Repository;
 use glob::glob;
 use std::{
     env,
     fs::{self, File},
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     process::Command,
     str,
@@ -169,6 +168,7 @@ impl Version {
         }
     }
 
+    #[cfg(feature = "git")]
     fn patch(self) -> &'static str {
         #![allow(clippy::enum_glob_use)]
         use Version::*;
@@ -208,6 +208,80 @@ impl Version {
     fn has_propagate(self) -> bool {
         self >= Version::V213
     }
+
+    fn has_lrat(self) -> bool {
+        self >= Version::V170
+    }
+
+    fn has_frat(self) -> bool {
+        // NOTE: FRAT is technically supported since v1.7.0, but the options for requesting it differ
+        self >= Version::V190
+    }
+
+    fn has_idrup(self) -> bool {
+        self >= Version::V200
+    }
+
+    fn has_proof_tracer(self) -> bool {
+        self >= Version::V200
+    }
+
+    fn set_defines(self, build: &mut cc::Build) {
+        if !has_cpp_feature(CppFeature::FlexibleArrayMembers) {
+            build.define("NFLEXIBLE", None);
+        }
+        if !has_cpp_feature(CppFeature::UnlockedIo) {
+            build.define("NUNLOCKED", None);
+        }
+        if self >= Version::V211 && !has_cpp_feature(CppFeature::Closefrom) {
+            build.define("NCLOSEFROM", None);
+        }
+        if self.has_flip() {
+            build.define("FLIP", None);
+        }
+        if self.has_ilb() {
+            build.define("ILB", None);
+        }
+        if self.has_reimply() {
+            build.define("REIMPLY", None);
+        }
+        if self.has_ipasir_up() {
+            build.define("IPASIRUP", None);
+        }
+        if self.has_propagate() {
+            build.define("PROPAGATE", None);
+        } else {
+            build.define("PYSAT_PROPCHECK", None);
+        }
+        if self.has_proof_tracer() {
+            build.define("TRACER", None);
+        }
+    }
+
+    /// Sets custom `rustc` `--cfg` arguments for features only present in some version
+    fn set_cfgs(self) {
+        println!("cargo:rustc-check-cfg=cfg(cadical_feature, values(\"flip\", \"propagate\", \"pysat-propcheck\", \"lrat\", \"frat\", \"idrup\", \"proof-tracer\"))");
+        if self.has_flip() {
+            println!("cargo:rustc-cfg=cadical_feature=\"flip\"");
+        }
+        if self.has_propagate() {
+            println!("cargo:rustc-cfg=cadical_feature=\"propagate\"");
+        } else {
+            println!("cargo:rustc-cfg=cadical_feature=\"pysat-propcheck\"");
+        }
+        if self.has_lrat() {
+            println!("cargo:rustc-cfg=cadical_feature=\"lrat\"");
+        }
+        if self.has_frat() {
+            println!("cargo:rustc-cfg=cadical_feature=\"frat\"");
+        }
+        if self.has_idrup() {
+            println!("cargo:rustc-cfg=cadical_feature=\"idrup\"");
+        }
+        if self.has_proof_tracer() {
+            println!("cargo:rustc-cfg=cadical_feature=\"proof-tracer\"");
+        }
+    }
 }
 
 fn main() {
@@ -245,29 +319,25 @@ fn main() {
 
     let cadical_dir = get_cadical_dir(version, None);
 
-    generate_bindings(&format!("{cadical_dir}/src/ccadical.h"), version, &out_dir);
+    generate_bindings(&cadical_dir, version, &out_dir);
 
-    // Set custom configs for features only present in some version
-    println!("cargo:rustc-check-cfg=cfg(cadical_feature, values(\"flip\", \"propagate\", \"pysat-propcheck\"))");
-    if version.has_flip() {
-        println!("cargo:rustc-cfg=cadical_feature=\"flip\"");
-    }
-    if version.has_propagate() {
-        println!("cargo:rustc-cfg=cadical_feature=\"propagate\"");
-    } else {
-        println!("cargo:rustc-cfg=cadical_feature=\"pysat-propcheck\"");
-    }
+    version.set_cfgs();
 }
 
 /// Generates Rust FFI bindings
-fn generate_bindings(header_path: &str, version: Version, out_dir: &str) {
+fn generate_bindings(cadical_dir: &str, version: Version, out_dir: &str) {
+    let header_path = format!("{cadical_dir}/src/ccadical.h");
+
     let bindings = bindgen::Builder::default()
-        .rust_target("1.66.1".parse().unwrap()) // Set MSRV of RustSAT
+        .rust_target("1.77.0".parse().unwrap()) // Set MSRV
+        .clang_arg(format!("-I{cadical_dir}/src"))
         .clang_arg("-Icpp-extension")
-        .header(header_path)
-        .allowlist_file(header_path)
+        .allowlist_file(&header_path)
         .allowlist_file("cpp-extension/ccadical_extension.h")
         .blocklist_item("FILE")
+        .blocklist_item("_IO_FILE")
+        .blocklist_item("__sFILE")
+        .blocklist_item("fpos_t")
         .blocklist_function("ccadical_add")
         .blocklist_function("ccadical_assume")
         .blocklist_function("ccadical_solve")
@@ -278,6 +348,16 @@ fn generate_bindings(header_path: &str, version: Version, out_dir: &str) {
         .blocklist_function("ccadical_close_proof")
         .blocklist_function("ccadical_conclude")
         .blocklist_function("ccadical_simplify");
+    let bindings = if version.has_proof_tracer() {
+        // in this case, `ccadical.h` is included from `ctracer.h`
+        bindings
+            .header("cpp-extension/ctracer.h")
+            .allowlist_file("cpp-extension/ctracer.h")
+    } else {
+        bindings.header(&header_path)
+    };
+    #[cfg(not(feature = "tracing"))]
+    let bindings = bindings.blocklist_function("ccadical_trace_api_calls");
     let bindings = if version.has_flip() {
         bindings.clang_arg("-DFLIP")
     } else {
@@ -288,6 +368,13 @@ fn generate_bindings(header_path: &str, version: Version, out_dir: &str) {
     } else {
         bindings.clang_arg("-DPYSAT_PROPCHECK")
     };
+    let bindings = if cfg!(feature = "tracing")
+        || cfg!(feature = "debug") && env::var("PROFILE").unwrap() == "debug"
+    {
+        bindings
+    } else {
+        bindings.clang_arg("-DNTRACING")
+    };
     let bindings = bindings
         .generate()
         .expect("Unable to generate ffi bindings");
@@ -296,7 +383,7 @@ fn generate_bindings(header_path: &str, version: Version, out_dir: &str) {
         .expect("Could not write ffi bindings");
 }
 
-fn get_cadical_dir(version: Version, remote: Option<(&str, &str)>) -> String {
+fn get_cadical_dir(version: Version, _remote: Option<(&str, &str)>) -> String {
     if let Ok(src_dir) = std::env::var("CADICAL_SRC_DIR") {
         if version_set_manually!() {
             println!("cargo:warning=Both version feature and CADICAL_SRC_DIR. It is your responsibility to ensure that they make sense together.");
@@ -310,18 +397,23 @@ fn get_cadical_dir(version: Version, remote: Option<(&str, &str)>) -> String {
         return String::from("cppsrc");
     }
 
-    let mut src_dir = env::var("OUT_DIR").unwrap();
-    src_dir.push_str("/cadical");
-    if let Some((repo, branch)) = remote {
-        update_repo(
-            Path::new(&src_dir),
-            repo,
-            branch,
-            version.reference(),
-            Path::new("patches").join(version.patch()),
-        );
+    #[cfg(feature = "git")]
+    {
+        let mut src_dir = env::var("OUT_DIR").unwrap();
+        src_dir.push_str("/cadical");
+        if let Some((repo, branch)) = _remote {
+            update_repo(
+                Path::new(&src_dir),
+                repo,
+                branch,
+                version.reference(),
+                Path::new("patches").join(version.patch()),
+            );
+        }
+        src_dir
     }
-    src_dir
+    #[cfg(not(feature = "git"))]
+    unreachable!("non-default features enable the git feature")
 }
 
 fn build(repo: &str, branch: &str, version: Version) {
@@ -336,15 +428,14 @@ fn build(repo: &str, branch: &str, version: Version) {
                     if name == "cadical.cpp" || name == "mobical.cpp" || name == "ipasir.cpp" {
                         return None; // Filter out application files and IPASIR interface
                     }
-                };
+                }
                 Some(p)
             } else {
                 None
             }
         });
     // Setup build configuration
-    let mut cadical_build = cc::Build::new();
-    cadical_build.cpp(true).std("c++11");
+    let mut cadical_build = default_build();
     if cfg!(feature = "debug") && env::var("PROFILE").unwrap() == "debug" {
         cadical_build
             .opt_level(0)
@@ -356,33 +447,15 @@ fn build(repo: &str, branch: &str, version: Version) {
             .opt_level(3)
             .define("NDEBUG", None)
             .define("NCONTRACTS", None) // --no-contracts
-            .define("NTRACING", None) // --no-tracing
             .warnings(false);
+        #[cfg(not(feature = "tracing"))]
+        cadical_build.define("NTRACING", None); // --no-tracing
     }
     #[cfg(feature = "quiet")]
     cadical_build.define("QUIET", None); // --quiet
     #[cfg(feature = "logging")]
     cadical_build.define("LOGGING", None); // --log
-    if version >= Version::V211 && cfg!(target_os = "macos") {
-        cadical_build.define("NCLOSEFROM", None);
-    }
-    if version.has_flip() {
-        cadical_build.define("FLIP", None);
-    }
-    if version.has_ilb() {
-        cadical_build.define("ILB", None);
-    }
-    if version.has_reimply() {
-        cadical_build.define("REIMPLY", None);
-    }
-    if version.has_ipasir_up() {
-        cadical_build.define("IPASIRUP", None);
-    }
-    if version.has_propagate() {
-        cadical_build.define("PROPAGATE", None);
-    } else {
-        cadical_build.define("PYSAT_PROPCHECK", None);
-    }
+    version.set_defines(&mut cadical_build);
 
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let out_dir = Path::new(&out_dir);
@@ -404,11 +477,11 @@ fn build(repo: &str, branch: &str, version: Version) {
         .include(out_dir)
         .include(cadical_dir.join("src"))
         .include("cpp-extension")
-        .warnings(false)
         .files(src_files)
         .compile("cadical");
 }
 
+#[cfg(feature = "git")]
 fn update_repo(repo_path: &Path, url: &str, branch: &str, reference: &str, patch: PathBuf) {
     let repo = if let Ok(repo) = git2::Repository::open(repo_path) {
         if repo.find_reference(reference).is_err() {
@@ -459,7 +532,10 @@ fn update_repo(repo_path: &Path, url: &str, branch: &str, reference: &str, patch
 }
 
 /// Applies a patch to the repository
-fn apply_patch<P: AsRef<Path>>(repo: &Repository, patch: P) {
+#[cfg(feature = "git")]
+fn apply_patch<P: AsRef<Path>>(repo: &git2::Repository, patch: P) {
+    use std::io::Read;
+
     let mut f = File::open(patch).unwrap();
     let mut buffer = Vec::new();
     f.read_to_end(&mut buffer).unwrap();
@@ -495,4 +571,99 @@ fn get_compiler_description(compiler: &cc::Tool) -> (String, String) {
         compiler_version,
         String::from(compiler_flags.to_str().unwrap()),
     )
+}
+
+/// Gets a [`cc::Build`] with the default configuration applied
+/// (used in main build and when checking Cpp features)
+fn default_build() -> cc::Build {
+    let mut build = cc::Build::new();
+    build.cpp(true).std("c++11");
+    build
+}
+
+#[derive(Clone, Copy, Debug)]
+enum CppFeature {
+    FlexibleArrayMembers,
+    UnlockedIo,
+    Closefrom,
+}
+
+const FLEXIBLE_ARRAY_MEMBERS_TEST: &str = r"
+#include <cstdlib>
+struct S {
+  int size;
+  int flexible_array_member[];
+};
+int main () {
+  struct S * s = (struct S*) malloc (12);
+  s->size = 2;
+  s->flexible_array_member[0] = 1;
+  s->flexible_array_member[1] = -1;
+  int res = 0;
+  for (int i = 0; i != s->size; i++)
+    res += s->flexible_array_member[i];
+  return res;
+}
+";
+
+const UNLOCKED_IO_TEST: &str = r#"
+#include <cstdio>
+int main () {
+  FILE * file = stdout;
+  if (!file) return 1;
+  if (putc_unlocked (42, file) != 42) return 1;
+  if (fclose (file)) return 1;
+  file = fopen (path, "r");
+  if (!file) return 1;
+  if (getc_unlocked (file) != 42) return 1;
+  if (fclose (file)) return 1;
+  return 0;
+}
+"#;
+
+const CLOSEFROM_TEST: &str = r#"
+extern "C" {
+#include <unistd.h>
+};
+int main () {
+  closefrom (0);
+  return 0;
+}
+"#;
+
+/// Checks whether a Cpp feature is available
+///
+/// The actual checks are taken from CaDiCaL's `configure` script
+fn has_cpp_feature(feature: CppFeature) -> bool {
+    let out_dir = env::var("OUT_DIR").unwrap();
+    let (name, content) = match feature {
+        CppFeature::FlexibleArrayMembers => {
+            ("has-flexible-array-members", FLEXIBLE_ARRAY_MEMBERS_TEST)
+        }
+        CppFeature::UnlockedIo => ("has-unlocked-io", UNLOCKED_IO_TEST),
+        CppFeature::Closefrom => ("has-closefrom", CLOSEFROM_TEST),
+    };
+
+    // write test to file
+    let test_file = format!("{out_dir}/{name}.cpp");
+    {
+        let mut test_file = fs::File::create(&test_file).expect("cannot open test file");
+        write!(test_file, "{content}").expect("failed to write test file");
+    }
+
+    // compile and run test
+    let out_file = format!("{out_dir}/{name}.out");
+    let mut compile = default_build().get_compiler().to_command();
+    let compile = compile
+        .current_dir(out_dir)
+        .args([&test_file, "-o", &out_file])
+        .output()
+        .expect("failed to run test compilation");
+    if !compile.status.success() {
+        return false;
+    }
+    let output = Command::new(out_file)
+        .output()
+        .expect("failed to execute compiled test");
+    output.status.success()
 }

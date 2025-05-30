@@ -35,9 +35,23 @@
 //! In order to build a custom version of Kissat, this crate supports the `KISSAT_SRC_DIR`
 //! environment variable.
 //! If this is set, Kissat will be built from the path specified there.
+//!
+//! ## Minimum Supported Rust Version (MSRV)
+//!
+//! Currently, the MSRV is 1.77.0, the plan is to always support an MSRV that is at least a year
+//! old.
+//!
+//! Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+//! sure to pin a precise version of RustSAT.
+//!
+//! Note that the specified minimum-supported Rust version only applies if the _newest_ version of
+//! Kissat is build.
+//! Older versions are pulled down via the [`git2`](https://crates.io/crates/git2) crate, which has
+//! transitive dependencies that have a higher MSRV.
 
 #![warn(clippy::pedantic)]
 #![warn(missing_docs)]
+#![warn(missing_debug_implementations)]
 
 use core::ffi::{c_int, c_uint, c_void, CStr};
 use std::{ffi::CString, fmt};
@@ -90,6 +104,24 @@ pub struct Kissat<'term> {
     state: InternalSolverState,
     terminate_cb: OptTermCallbackStore<'term>,
     stats: SolverStats,
+}
+
+impl fmt::Debug for Kissat<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Kissat")
+            .field("handle", &self.handle)
+            .field("state", &self.state)
+            .field(
+                "terminate_cb",
+                if self.terminate_cb.is_some() {
+                    &"some callback"
+                } else {
+                    &"no callback"
+                },
+            )
+            .field("stats", &self.stats)
+            .finish()
+    }
 }
 
 unsafe impl Send for Kissat<'_> {}
@@ -415,6 +447,7 @@ impl Interrupt for Kissat<'_> {
 }
 
 /// An Interrupter for the Kissat solver
+#[derive(Debug)]
 pub struct Interrupter {
     /// The C API handle
     handle: *mut ffi::kissat,
@@ -504,13 +537,15 @@ impl fmt::Display for Limit {
     }
 }
 
-extern "C" fn panic_instead_of_abort() {
+extern "C" fn rustsat_kissat_panic_instead_of_abort() {
     panic!("kissat called kissat_abort");
 }
 
 /// Changes Kissat's abort behavior to cause a Rust panic instead
-pub fn panic_intead_of_abort() {
-    unsafe { ffi::kissat_call_function_instead_of_abort(Some(panic_instead_of_abort)) };
+pub fn panic_instead_of_abort() {
+    unsafe {
+        ffi::kissat_call_function_instead_of_abort(Some(rustsat_kissat_panic_instead_of_abort));
+    };
 }
 
 /// Changes Kissat's abort behavior to call the given function instead
@@ -526,7 +561,10 @@ mod test {
         solvers::{Solve, SolverState, StateError},
     };
 
-    rustsat_solvertests::basic_unittests!(Kissat);
+    rustsat_solvertests::basic_unittests!(
+        Kissat,
+        "kissat-(sc2022-(light|hyper|bulky)|[major].[minor].[patch])"
+    );
 
     #[test]
     fn configure() {

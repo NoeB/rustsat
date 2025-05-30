@@ -1,7 +1,6 @@
-[![Check & Test](https://github.com/chrjabs/rustsat/actions/workflows/glucose.yml/badge.svg)](https://github.com/chrjabs/rustsat/actions/workflows/glucose.yml)
-[![crates.io](https://img.shields.io/crates/v/rustsat-glucose)](https://crates.io/crates/rustsat-glucose)
-[![docs.rs](https://img.shields.io/docsrs/rustsat-glucose)](https://docs.rs/rustsat-glucose)
-[![License](https://img.shields.io/crates/l/rustsat-glucose)](../LICENSE)
+[![crates.io](https://img.shields.io/crates/v/rustsat-glucose?style=for-the-badge&logo=rust)](https://crates.io/crates/rustsat-glucose)
+[![docs.rs](https://img.shields.io/docsrs/rustsat-glucose?style=for-the-badge&logo=docsdotrs)](https://docs.rs/rustsat-glucose)
+[![License](https://img.shields.io/crates/l/rustsat-glucose?style=for-the-badge)](../LICENSE)
 
 <!-- cargo-rdme start -->
 
@@ -17,6 +16,15 @@ The Glucose SAT solver to be used with the [RustSAT](https://github.com/chrjabs/
 ## Glucose Version
 
 The version of Glucose in this crate is Version 4.2.1.
-The used Cpp source repository can be found [here](https://github.com/chrjabs/glucose4).
+The used Cpp source can be found
+[here](https://github.com/chrjabs/rustsat/tree/main/glucose/cppsrc).
+
+## Minimum Supported Rust Version (MSRV)
+
+Currently, the MSRV is 1.76.0, the plan is to always support an MSRV that is at least a year
+old.
+
+Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+sure to pin a precise version of RustSAT.
 
 <!-- cargo-rdme end -->

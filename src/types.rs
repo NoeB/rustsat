@@ -38,20 +38,54 @@ pub type RsHasher = rustc_hash::FxHasher;
 #[cfg(not(feature = "fxhash"))]
 pub type RsHasher = std::collections::hash_map::DefaultHasher;
 
+/// [`u32`] with an upper bound, mainly used for safe `serde::Deserialize`
+#[derive(Hash, Eq, PartialEq, PartialOrd, Clone, Copy, Ord)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "u32"))]
+#[repr(transparent)]
+struct LimitedU32<const U: u32>(u32);
+
+impl<const U: u32> TryFrom<u32> for LimitedU32<U> {
+    type Error = LimitedU32Error<U>;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if value > U {
+            Err(LimitedU32Error(()))
+        } else {
+            Ok(Self(value))
+        }
+    }
+}
+
+/// Error when creating a limited range [`u32`] and the value exceeds the limit
+#[derive(thiserror::Error, Debug)]
+struct LimitedU32Error<const U: u32>(());
+
+impl<const U: u32> std::fmt::Display for LimitedU32Error<U> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "value must at most be {U}")
+    }
+}
+
+const MAX_VAR_IDX: u32 = (u32::MAX - 1) / 2;
+
 /// Type representing boolean variables in a SAT problem. Variables indexing in
 /// RustSAT starts from 0 and the maximum index is `(u32::MAX - 1) / 2`. This is
 /// because literals are represented as a single `u32` as well. The memory
 /// representation of variables is `u32`.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Clone, Copy, Ord)]
+#[allow(clippy::unsafe_derive_deserialize)] // temporary, proper fix is in the works
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
+// this is fine because we are going through `LimitedU32`, which is deserialized via `try_from`
+#[allow(clippy::unsafe_derive_deserialize)]
 pub struct Var {
-    idx: u32,
+    idx: LimitedU32<MAX_VAR_IDX>,
 }
 
 impl Var {
     /// The maximum index that can be represented.
-    pub const MAX_IDX: u32 = (u32::MAX - 1) / 2;
+    pub const MAX_IDX: u32 = MAX_VAR_IDX;
 
     /// Creates a new variables with a given index.
     /// Indices start from 0.
@@ -62,7 +96,9 @@ impl Var {
     #[must_use]
     pub const fn new(idx: u32) -> Var {
         assert!(idx <= Var::MAX_IDX, "variable index too high");
-        Var { idx }
+        Var {
+            idx: LimitedU32(idx),
+        }
     }
 
     /// Creates a new variables with a given index.
@@ -72,10 +108,11 @@ impl Var {
     ///
     /// `TypeError::IdxTooHigh(idx, Var::MAX_IDX)` if `idx > Var::MAX_IDX`.
     pub fn new_with_error(idx: u32) -> Result<Var, TypeError> {
-        if idx > Var::MAX_IDX {
-            return Err(TypeError::IdxTooHigh(idx, Var::MAX_IDX));
-        }
-        Ok(Var { idx })
+        Ok(Var {
+            idx: idx
+                .try_into()
+                .map_err(|_| TypeError::IdxTooHigh(idx, Var::MAX_IDX))?,
+        })
     }
 
     /// Creates a new variables with a given index.
@@ -90,7 +127,9 @@ impl Var {
     #[must_use]
     pub const unsafe fn new_unchecked(idx: u32) -> Var {
         debug_assert!(idx <= Var::MAX_IDX);
-        Var { idx }
+        Var {
+            idx: LimitedU32(idx),
+        }
     }
 
     /// Creates a literal with a given negation from the variable
@@ -106,7 +145,7 @@ impl Var {
     #[inline]
     #[must_use]
     pub const fn lit(self, negated: bool) -> Lit {
-        unsafe { Lit::new_unchecked(self.idx, negated) }
+        unsafe { Lit::new_unchecked(self.idx.0, negated) }
     }
 
     /// Creates a literal that is not negated.
@@ -122,7 +161,7 @@ impl Var {
     #[inline]
     #[must_use]
     pub const fn pos_lit(self) -> Lit {
-        unsafe { Lit::positive_unchecked(self.idx) }
+        unsafe { Lit::positive_unchecked(self.idx.0) }
     }
 
     /// Creates a negated literal.
@@ -138,7 +177,7 @@ impl Var {
     #[inline]
     #[must_use]
     pub const fn neg_lit(self) -> Lit {
-        unsafe { Lit::negative_unchecked(self.idx) }
+        unsafe { Lit::negative_unchecked(self.idx.0) }
     }
 
     /// Returns the index of the variable. This is a `usize` to enable easier
@@ -156,7 +195,7 @@ impl Var {
     #[inline]
     #[must_use]
     pub fn idx(self) -> usize {
-        self.idx as usize
+        self.idx.0 as usize
     }
 
     /// Returns the 32 bit index of the variable.
@@ -171,7 +210,7 @@ impl Var {
     #[inline]
     #[must_use]
     pub fn idx32(self) -> u32 {
-        self.idx
+        self.idx.0
     }
 
     /// Converts the variable to an integer as accepted by
@@ -213,16 +252,18 @@ impl ops::Add<u32> for Var {
     type Output = Var;
 
     fn add(self, rhs: u32) -> Self::Output {
-        let idx = self.idx + rhs;
+        let idx = self.idx.0 + rhs;
         debug_assert!(idx <= Var::MAX_IDX, "variable index overflow");
-        Var { idx }
+        Var {
+            idx: LimitedU32(idx),
+        }
     }
 }
 
 impl ops::AddAssign<u32> for Var {
     fn add_assign(&mut self, rhs: u32) {
-        debug_assert!(self.idx + rhs <= Var::MAX_IDX, "variable index overflow");
-        self.idx += rhs;
+        debug_assert!(self.idx.0 + rhs <= Var::MAX_IDX, "variable index overflow");
+        self.idx.0 += rhs;
     }
 }
 
@@ -232,14 +273,14 @@ impl ops::Sub<u32> for Var {
 
     fn sub(self, rhs: u32) -> Self::Output {
         Var {
-            idx: self.idx - rhs,
+            idx: LimitedU32(self.idx.0 - rhs),
         }
     }
 }
 
 impl ops::SubAssign<u32> for Var {
     fn sub_assign(&mut self, rhs: u32) {
-        self.idx -= rhs;
+        self.idx.0 -= rhs;
     }
 }
 
@@ -257,7 +298,7 @@ impl fmt::Display for Var {
 /// Variables can be printed with the [`Debug`](std::fmt::Debug) trait
 impl fmt::Debug for Var {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "x{}", self.idx)
+        write!(f, "x{}", self.idx.0)
     }
 }
 
@@ -294,8 +335,11 @@ macro_rules! var {
 /// be used to index data structures with the two literals of a variable
 /// being close together.
 #[derive(Hash, Eq, PartialEq, PartialOrd, Ord, Clone, Copy)]
+#[allow(clippy::unsafe_derive_deserialize)] // temporary, proper fix is in the works
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[repr(transparent)]
+// this is fine because there aren't any invalid `Lit` representations, only invalid `Var` ones
+#[allow(clippy::unsafe_derive_deserialize)]
 pub struct Lit {
     lidx: u32,
 }
@@ -739,7 +783,7 @@ pub enum InvalidVLine {
 
 /// Different possible `v`-line formats
 enum VLineFormat {
-    /// Assignment specified as a space-spearated sequence of IPASIR literals. This is the format
+    /// Assignment specified as a space-separated sequence of IPASIR literals. This is the format
     /// used in the SAT competition.
     SatComp,
     /// Assignment specified as a sequence of zeroes and ones. This is the format used in the
@@ -759,6 +803,18 @@ pub struct Assignment {
 }
 
 impl Assignment {
+    /// Gets the length of the assignment
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.assignment.len()
+    }
+
+    /// Checks whether the assignment is empty
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.assignment.is_empty()
+    }
+
     /// Get the value that the solution assigns to a variable.
     /// If the variable is not included in the solution, will return `TernaryVal::DontCare`.
     #[must_use]
@@ -1011,7 +1067,7 @@ impl fmt::Display for Assignment {
     }
 }
 
-/// Turns the solution into an iterator over all true literals
+/// Turns the assignment into an iterator over all true literals
 impl IntoIterator for Assignment {
     type Item = Lit;
 
@@ -1023,6 +1079,27 @@ impl IntoIterator for Assignment {
     fn into_iter(self) -> Self::IntoIter {
         self.assignment
             .into_iter()
+            .enumerate()
+            .filter_map(|(idx, tv)| match tv {
+                TernaryVal::True => Some(Var::new(idx.try_into().unwrap()).pos_lit()),
+                TernaryVal::False => Some(Var::new(idx.try_into().unwrap()).neg_lit()),
+                TernaryVal::DontCare => None,
+            })
+    }
+}
+
+/// Turns the assignment reference into an iterator over all true literals
+impl<'a> IntoIterator for &'a Assignment {
+    type Item = Lit;
+
+    type IntoIter = std::iter::FilterMap<
+        std::iter::Enumerate<std::slice::Iter<'a, TernaryVal>>,
+        fn((usize, &TernaryVal)) -> Option<Lit>,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.assignment
+            .iter()
             .enumerate()
             .filter_map(|(idx, tv)| match tv {
                 TernaryVal::True => Some(Var::new(idx.try_into().unwrap()).pos_lit()),
@@ -1101,6 +1178,45 @@ impl<I: IntoIterator<Item = (Clause, usize)>> WClsIter for I {}
 pub trait IWLitIter: IntoIterator<Item = (Lit, isize)> {}
 impl<I: IntoIterator<Item = (Lit, isize)>> IWLitIter for I {}
 
+#[cfg(feature = "proof-logging")]
+mod pigeons {
+    use std::fmt;
+
+    /// A formatter for [`super::Var`] for use with the [`pigeons`] library to ensure same
+    /// variable formatting as in VeriPB
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+    #[repr(transparent)]
+    pub struct PidgeonVarFormatter(super::Var);
+
+    impl From<super::Var> for PidgeonVarFormatter {
+        fn from(value: super::Var) -> Self {
+            PidgeonVarFormatter(value)
+        }
+    }
+
+    impl fmt::Display for PidgeonVarFormatter {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "x{}", self.0.idx() + 1)
+        }
+    }
+
+    impl pigeons::VarLike for super::Var {
+        type Formatter = PidgeonVarFormatter;
+    }
+
+    impl From<super::Lit> for pigeons::Axiom<super::Var> {
+        fn from(value: super::Lit) -> Self {
+            use pigeons::VarLike;
+
+            if value.is_pos() {
+                value.var().pos_axiom()
+            } else {
+                value.var().neg_axiom()
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{mem::size_of, num::ParseIntError};
@@ -1143,6 +1259,14 @@ mod tests {
         let lit = Lit::positive(idx);
         let var = Var::new(idx);
         assert_eq!(lit.var(), var);
+    }
+
+    #[cfg(feature = "proof-logging")]
+    #[test]
+    fn proof_log_var() {
+        use pigeons::VarLike;
+        let var = Var::new(3);
+        assert_eq!(&format!("{}", <Var as VarLike>::Formatter::from(var)), "x4");
     }
 
     #[test]
@@ -1332,9 +1456,9 @@ mod tests {
         assert_eq!(Assignment::from_vline(vline).unwrap(), ground_truth);
         assert_eq!(
             {
-                let mut asign = Assignment::default();
-                asign.extend_from_vline(vline).unwrap();
-                asign
+                let mut assign = Assignment::default();
+                assign.extend_from_vline(vline).unwrap();
+                assign
             },
             ground_truth
         );
@@ -1354,9 +1478,9 @@ mod tests {
         assert_eq!(Assignment::from_vline(vline).unwrap(), ground_truth);
         assert_eq!(
             {
-                let mut asign = Assignment::default();
-                asign.extend_from_vline(vline).unwrap();
-                asign
+                let mut assign = Assignment::default();
+                assign.extend_from_vline(vline).unwrap();
+                assign
             },
             ground_truth
         );
@@ -1376,9 +1500,9 @@ mod tests {
         assert_eq!(Assignment::from_vline(vline).unwrap(), ground_truth);
         assert_eq!(
             {
-                let mut asign = Assignment::default();
-                asign.extend_from_vline(vline).unwrap();
-                asign
+                let mut assign = Assignment::default();
+                assign.extend_from_vline(vline).unwrap();
+                assign
             },
             ground_truth
         );
@@ -1443,6 +1567,63 @@ mod tests {
         ]);
         let res = Assignment::from_vline(vline).unwrap();
         assert_eq!(res, ground_truth);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_var() {
+        let var = Var::new(5);
+        let json = serde_json::to_string(&var).unwrap();
+        assert_eq!(json, r#"{"idx":5}"#);
+        let roundtrip: Var = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip, var);
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_var_invalid() {
+        let failure: Result<Var, _> = serde_json::from_str("");
+        assert!(failure.is_err());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_lit() {
+        let lit = Lit::new(5, true);
+        let json = serde_json::to_string(&lit).unwrap();
+        assert_eq!(json, r#"{"lidx":11}"#);
+        let roundtrip: Lit = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip, lit);
+    }
+
+    #[test]
+    fn assign_into_iter() {
+        let assign = Assignment::from(vec![
+            TernaryVal::True,
+            TernaryVal::False,
+            TernaryVal::True,
+            TernaryVal::DontCare,
+            TernaryVal::True,
+            TernaryVal::False,
+        ]);
+        let lits: Vec<_> = assign.into_iter().collect();
+        assert_eq!(lits, vec![lit![0], !lit![1], lit![2], lit![4], !lit![5]]);
+    }
+
+    #[test]
+    fn assign_ref_into_iter() {
+        let assign = Assignment::from(vec![
+            TernaryVal::True,
+            TernaryVal::False,
+            TernaryVal::True,
+            TernaryVal::DontCare,
+            TernaryVal::True,
+            TernaryVal::False,
+        ]);
+        let lits: Vec<_> = (&assign).into_iter().collect();
+        assert_eq!(lits, vec![lit![0], !lit![1], lit![2], lit![4], !lit![5]]);
+        // ensure assign is still around, so we actually used a reference
+        assert_eq!(assign.len(), 6);
     }
 }
 

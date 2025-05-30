@@ -9,10 +9,10 @@ use std::{
 };
 
 use crate::{
+    algs::maxsat,
     clause,
-    encodings::{card, pb},
+    solvers::Solve,
     types::{
-        constraints::{CardConstraint, PbConstraint},
         Assignment, Clause, ClsIter, Lit, LitIter, RsHashMap, TernaryVal, Var, WClsIter, WLitIter,
     },
     utils::unreachable_none,
@@ -472,7 +472,15 @@ impl Objective {
 
     /// Adds a soft clause or updates its weight. Returns the old weight, if
     /// the clause was already in the objective.
+    ///
+    /// # Panics
+    ///
+    /// If the clause is empty and `w` is larger than [`isize::MAX`]
     pub fn add_soft_clause(&mut self, w: usize, cl: Clause) -> Option<usize> {
+        if cl.is_empty() {
+            self.increase_offset(isize::try_from(w).expect("weight overflow"));
+            return None;
+        }
         if cl.len() == 1 {
             return self.add_soft_lit(w, !cl[0]);
         }
@@ -577,17 +585,6 @@ impl Objective {
     }
 
     /// Converts the objective to a set of soft clauses and an offset
-    #[deprecated(
-        since = "0.5.0",
-        note = "as_soft_cls has been renamed to into_soft_cls and will be removed in a future release"
-    )]
-    #[must_use]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn as_soft_cls(self) -> (impl WClsIter, isize) {
-        self.into_soft_cls()
-    }
-
-    /// Converts the objective to a set of soft clauses and an offset
     #[must_use]
     pub fn into_soft_cls(self) -> (impl WClsIter, isize) {
         match self.0 {
@@ -620,19 +617,6 @@ impl Objective {
                 (soft_clauses, offset)
             }
         }
-    }
-
-    /// Converts the objective to unweighted soft clauses, a unit weight and an offset. If the
-    /// objective is weighted, the soft clause will appear as often as its
-    /// weight in the output vector.
-    #[deprecated(
-        since = "0.5.0",
-        note = "as_unweighted_soft_cls has been renamed to into_unweighted_soft_cls and will be removed in a future release"
-    )]
-    #[must_use]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn as_unweighted_soft_cls(self) -> (impl ClsIter, usize, isize) {
-        self.into_unweighted_soft_cls()
     }
 
     /// Converts the objective to unweighted soft clauses, a unit weight and an offset. If the
@@ -707,19 +691,6 @@ impl Objective {
     }
 
     /// Converts the objective to a set of hard clauses, soft literals and an offset
-    #[deprecated(
-        since = "0.5.0",
-        note = "as_soft_lits has been renamed to into_soft_lits and will be removed in a future release"
-    )]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn as_soft_lits<VM>(self, var_manager: &mut VM) -> (Cnf, (impl WLitIter, isize))
-    where
-        VM: ManageVars,
-    {
-        self.into_soft_lits(var_manager)
-    }
-
-    /// Converts the objective to a set of hard clauses, soft literals and an offset
     ///
     /// See [`Self::convert_to_soft_lits`] for converting in place
     pub fn into_soft_lits<VM>(mut self, var_manager: &mut VM) -> (Cnf, (impl WLitIter, isize))
@@ -739,24 +710,6 @@ impl Objective {
                 (cnf, (soft_lits, offset))
             }
         }
-    }
-
-    /// Converts the objective to hard clauses, unweighted soft literals, a unit
-    /// weight and an offset. If the objective is weighted, the soft literals
-    /// will appear as often as its weight in the output vector.
-    #[deprecated(
-        since = "0.5.0",
-        note = "as_unweighted_soft_lits has been renamed to into_unweighted_soft_lits and will be removed in a future release"
-    )]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn as_unweighted_soft_lits<VM>(
-        self,
-        var_manager: &mut VM,
-    ) -> (Cnf, impl LitIter, usize, isize)
-    where
-        VM: ManageVars,
-    {
-        self.into_unweighted_soft_lits(var_manager)
     }
 
     /// Converts the objective to hard clauses, unweighted soft literals, a unit
@@ -900,7 +853,7 @@ impl Objective {
                 soft_clauses,
                 ..
             } => {
-                varset.extend(soft_lits.iter().map(|(l, _)| l.var()));
+                varset.extend(soft_lits.keys().map(|l| l.var()));
                 varset.extend(
                     soft_clauses
                         .iter()
@@ -935,7 +888,7 @@ impl Objective {
                 soft_lits.sort_unstable();
                 soft_clauses.sort_unstable();
             }
-        };
+        }
         self
     }
 
@@ -955,7 +908,7 @@ impl Objective {
                 (soft_lits[..]).shuffle(&mut rng);
                 (soft_clauses[..]).shuffle(&mut rng);
             }
-        };
+        }
         self
     }
 
@@ -999,6 +952,25 @@ impl Objective {
                 unit_weight.unwrap_or(0),
             ),
         }
+    }
+}
+
+#[cfg(feature = "proof-logging")]
+impl pigeons::ObjectiveLike<crate::types::Var> for Objective {
+    fn sum_iter(&self) -> impl Iterator<Item = (isize, pigeons::Axiom<crate::types::Var>)> {
+        self.iter_soft_lits()
+            .expect("objective for proof logging cannot have soft clauses")
+            .into_iter()
+            .map(|(l, w)| {
+                (
+                    isize::try_from(w).expect("can only handle coefficients up to `isize::MAX`"),
+                    pigeons::Axiom::from(l),
+                )
+            })
+    }
+
+    fn offset(&self) -> isize {
+        self.offset()
     }
 }
 
@@ -1117,15 +1089,6 @@ impl<VM: ManageVars> Instance<VM> {
     }
 
     /// Gets a mutable reference to the hard constraints for modifying them
-    #[deprecated(
-        since = "0.5.0",
-        note = "get_constraints has been renamed to constraints_mut and will be removed in a future release"
-    )]
-    pub fn get_constraints(&mut self) -> &mut SatInstance<VM> {
-        &mut self.constrs
-    }
-
-    /// Gets a mutable reference to the hard constraints for modifying them
     pub fn constraints_mut(&mut self) -> &mut SatInstance<VM> {
         &mut self.constrs
     }
@@ -1133,15 +1096,6 @@ impl<VM: ManageVars> Instance<VM> {
     /// Gets a reference to the hard constraints
     pub fn constraints_ref(&self) -> &SatInstance<VM> {
         &self.constrs
-    }
-
-    /// Gets a mutable reference to the objective for modifying it
-    #[deprecated(
-        since = "0.5.0",
-        note = "get_objective has been renamed to objective_mut and will be removed in a future release"
-    )]
-    pub fn get_objective(&mut self) -> &mut Objective {
-        &mut self.obj
     }
 
     /// Gets a mutable reference to the objective for modifying it
@@ -1264,66 +1218,6 @@ impl<VM: ManageVars> Instance<VM> {
 
     /// Writes the instance to a DIMACS WCNF file at a path
     ///
-    /// # Performance
-    ///
-    /// For performance, consider using a [`std::io::BufWriter`] instance.
-    #[deprecated(since = "0.5.0", note = "use write_dimacs_path instead")]
-    #[allow(clippy::missing_errors_doc)]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn to_dimacs_path<P: AsRef<Path>>(self, path: P) -> Result<(), io::Error> {
-        let mut writer = fio::open_compressed_uncompressed_write(path)?;
-        #[allow(deprecated)]
-        self.to_dimacs(&mut writer)
-    }
-
-    /// Write to DIMACS WCNF (post 22)
-    #[deprecated(since = "0.5.0", note = "use write_dimacs instead")]
-    #[allow(clippy::missing_errors_doc)]
-    #[allow(clippy::missing_panics_doc)]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn to_dimacs<W: io::Write>(self, writer: &mut W) -> Result<(), io::Error> {
-        #[allow(deprecated)]
-        self.to_dimacs_with_encoders(
-            |constr, cnf, vm| {
-                card::default_encode_cardinality_constraint(constr, cnf, vm)
-                    .expect("cardinality encoding ran out of memory");
-            },
-            |constr, cnf, vm| {
-                pb::default_encode_pb_constraint(constr, cnf, vm)
-                    .expect("pb encoding ran out of memory");
-            },
-            writer,
-        )
-    }
-
-    /// Writes the instance to DIMACS WCNF (post 22) converting non-clausal
-    /// constraints with specific encoders.
-    #[deprecated(
-        since = "0.5.0",
-        note = "use convert_to_cnf_with_encoders and write_dimacs instead"
-    )]
-    #[allow(clippy::missing_errors_doc)]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn to_dimacs_with_encoders<W, CardEnc, PBEnc>(
-        self,
-        card_encoder: CardEnc,
-        pb_encoder: PBEnc,
-        writer: &mut W,
-    ) -> Result<(), io::Error>
-    where
-        W: io::Write,
-        CardEnc: FnMut(CardConstraint, &mut Cnf, &mut dyn ManageVars),
-        PBEnc: FnMut(PbConstraint, &mut Cnf, &mut dyn ManageVars),
-    {
-        let (cnf, vm) = self
-            .constrs
-            .into_cnf_with_encoders(card_encoder, pb_encoder);
-        let soft_cls = self.obj.into_soft_cls();
-        fio::dimacs::write_wcnf_annotated(writer, &cnf, soft_cls, Some(vm.n_used()))
-    }
-
-    /// Writes the instance to a DIMACS WCNF file at a path
-    ///
     /// This requires that the instance is clausal, i.e., does not contain any non-converted
     /// cardinality of pseudo-boolean constraints. If necessary, the instance can be converted by
     /// [`SatInstance::convert_to_cnf`] or [`SatInstance::convert_to_cnf_with_encoders`] first.
@@ -1364,41 +1258,6 @@ impl<VM: ManageVars> Instance<VM> {
             (soft_cls, offset),
             Some(n_vars),
         )?)
-    }
-
-    /// Writes the instance to an OPB file at a path
-    ///
-    /// # Performance
-    ///
-    /// For performance, consider using a [`std::io::BufWriter`] instance.
-    #[deprecated(since = "0.5.0", note = "use write_opb_path instead")]
-    #[allow(clippy::missing_errors_doc)]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn to_opb_path<P: AsRef<Path>>(
-        self,
-        path: P,
-        opts: fio::opb::Options,
-    ) -> Result<(), io::Error> {
-        let mut writer = fio::open_compressed_uncompressed_write(path)?;
-        #[allow(deprecated)]
-        self.to_opb(&mut writer, opts)
-    }
-
-    /// Writes the instance to an OPB file
-    #[deprecated(since = "0.5.0", note = "use write_opb instead")]
-    #[allow(clippy::missing_errors_doc)]
-    #[allow(clippy::missing_panics_doc)]
-    #[allow(clippy::wrong_self_convention)]
-    pub fn to_opb<W: io::Write>(
-        mut self,
-        writer: &mut W,
-        opts: fio::opb::Options,
-    ) -> Result<(), io::Error> {
-        let var_manager = self.constrs.var_manager_mut();
-        self.obj.convert_to_soft_lits(var_manager);
-        let offset = self.obj.offset();
-        let iter = self.obj.iter_soft_lits().unwrap();
-        fio::opb::write_opt::<W, VM, _>(writer, &self.constrs, (iter, offset), opts)
     }
 
     /// Writes the instance to an OPB file at a path
@@ -1590,6 +1449,50 @@ impl<VM: ManageVars + Default> Instance<VM> {
         let mut reader = fio::open_compressed_uncompressed_read(path)?;
         Self::from_opb_with_idx(&mut reader, obj_idx, opts)
     }
+
+    /// Solves the instance with a [`maxsat::Solve`] algorithm
+    ///
+    /// # Panics
+    ///
+    /// - If any interaction with the solver errors
+    /// - If the objective value overflows [`isize::MAX`]
+    pub fn solve_maxsat<Alg>(self) -> Option<(Assignment, isize)>
+    where
+        Alg: maxsat::Solve,
+        Alg::Solver: Default,
+    {
+        let mut solver = Alg::Solver::default();
+        let (cnf, vm) = self.constrs.into_cnf();
+        let mut vm = if let Some(max_var) = cmp::max(vm.max_var(), self.obj.max_var()) {
+            BasicVarManager::from_next_free(max_var + 1)
+        } else {
+            BasicVarManager::default()
+        };
+        solver
+            .add_cnf(cnf)
+            .expect("failed adding clauses to solver");
+        let handle_soft_cls = |(mut cl, weight): (Clause, usize)| {
+            debug_assert!(!cl.is_empty());
+            if cl.len() == 1 {
+                return (!cl[0], weight);
+            }
+            let blit = vm.new_lit();
+            cl.add(!blit);
+            solver
+                .add_clause(cl)
+                .expect("failed adding clause to solver");
+            (blit, weight)
+        };
+        let (iter, offset) = self.obj.into_soft_cls();
+        let obj: Vec<_> = iter.into_iter().map(handle_soft_cls).collect();
+        let (sol, cost) = Alg::solve(&mut solver, &obj)?;
+        Some((
+            sol,
+            offset
+                .checked_add_unsigned(cost)
+                .expect("objective value overflow"),
+        ))
+    }
 }
 
 impl<VM: ManageVars + Default> FromIterator<WcnfLine> for Instance<VM> {
@@ -1605,5 +1508,32 @@ impl<VM: ManageVars + Default> FromIterator<WcnfLine> for Instance<VM> {
             }
         }
         inst
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "proof-logging")]
+    #[test]
+    fn proof_log_obj() {
+        use itertools::Itertools;
+        use pigeons::ObjectiveLike;
+
+        use crate::lit;
+
+        let mut obj = super::Objective::default();
+        obj.add_soft_lit(5, lit![3]);
+        obj.increase_soft_lit_int(-5, lit![42]);
+        let truth = "5 x4 5 ~x43 -5";
+
+        assert_eq!(
+            &format!(
+                "{} {}",
+                obj.sum_iter()
+                    .format_with(" ", |(w, a), f| f(&format_args!("{w} {a}"))),
+                <super::Objective as ObjectiveLike<super::Var>>::offset(&obj)
+            ),
+            truth
+        );
     }
 }

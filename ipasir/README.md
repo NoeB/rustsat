@@ -1,7 +1,6 @@
-[![Check & Test](https://github.com/chrjabs/rustsat/actions/workflows/ipasir.yml/badge.svg)](https://github.com/chrjabs/rustsat/actions/workflows/ipasir.yml)
-[![crates.io](https://img.shields.io/crates/v/rustsat-ipasir)](https://crates.io/crates/rustsat-ipasir)
-[![docs.rs](https://img.shields.io/docsrs/rustsat-ipasir)](https://docs.rs/rustsat-ipasir)
-[![License](https://img.shields.io/crates/l/rustsat-cadical)](../LICENSE)
+[![crates.io](https://img.shields.io/crates/v/rustsat-ipasir?style=for-the-badge&logo=rust)](https://crates.io/crates/rustsat-ipasir)
+[![docs.rs](https://img.shields.io/docsrs/rustsat-ipasir?style=for-the-badge&logo=docsdotrs)](https://docs.rs/rustsat-ipasir)
+[![License](https://img.shields.io/crates/l/rustsat-cadical?style=for-the-badge)](../LICENSE)
 
 <!-- cargo-rdme start -->
 
@@ -33,5 +32,13 @@ println!("cargo:rustc-flags=-l dylib=c++");
 #[cfg(not(target_os = "macos"))]
 println!("cargo:rustc-flags=-l dylib=stdc++");
 ```
+
+## Minimum Supported Rust Version (MSRV)
+
+Currently, the MSRV is 1.76.0, the plan is to always support an MSRV that is at least a year
+old.
+
+Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+sure to pin a precise version of RustSAT.
 
 <!-- cargo-rdme end -->

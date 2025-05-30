@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main", "next-major" ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+  RUSTDOCFLAGS: -Dwarnings
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-everything:
+    name: All CI stages
+    runs-on: self-hosted
+    needs:
+      - tests
+      - msrv-build
+      - code-quality
+      - python-api
+      - docs
+      - cadical-each-feature
+      - kissat-each-feature
+    if: ${{ always() }}  # Run this job even if a dependency has failed.
+    steps:
+      - name: Job outcomes
+        run: |
+          echo "🧪 Workspace tests: ${{ needs.tests.result }}"
+          echo "🏗️ MSRV build: ${{ needs.msrv-build.result }}"
+          echo "✨ Code Quality: ${{ needs.code-quality.result }}"
+          echo "🐍 Python API: ${{ needs.python-api.result }}"
+          echo "📑 Check documentation: ${{ needs.docs.result }}"
+          echo "🧪 CaDiCaL test each feature: ${{ needs.cadical-each-feature.result }}"
+          echo "🧪 Kissat test each feature: ${{ needs.kissat-each-feature.result }}"
+      # Fail this required job if any of its dependent jobs have failed.
+      #
+      # Do not attempt to consolidate these steps into one step, it won't work.
+      # Multi-line `if` clauses are not evaluated properly.
+      - if: ${{ needs.tests.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.msrv-build.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.code-quality.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.python-api.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.docs.result != 'success' }}
+        run: exit 1
+      - if: ${{ needs.cadical-each-feature.result == 'failure' }}
+        run: exit 1
+      - if: ${{ needs.kissat-each-feature.result == 'failure' }}
+        run: exit 1
+
+  tests:
+    name: 🧪 Workspace tests
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: 🧪 Run tests
+        run: just test-ci
+
+  msrv-build:
+    name: 🏗️ MSRV build
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: 🏗️ Build
+        run: just msrv-ci
+
+  code-quality:
+    name: ✨ Code Quality
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: ✨ Run code quality checks
+        run: just code-quality-ci
+
+  python-api:
+    name: 🐍 Python API
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: ✨ Run Python API checks
+        run: just python-api-ci
+
+  docs:
+    name: 📑 Check documentation
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: ✨ Run docs checks
+        run: just docs-ci
+
+  coverage:
+    name: 📋 Test coverage
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: ✨ Generate coverage report
+        run: just coverage-ci
+      - name: ✨ Publish to Coveralls
+        uses: coverallsapp/github-action@master
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # TODO: Kani
+
+  feature-powerset:
+    name: 🔌 Test feature powerset
+    runs-on: self-hosted
+    if: contains(github.event.pull_request.labels.*.name, 'heavy-tests')
+    steps:
+      - uses: actions/checkout@v4
+      - name: ✨ Run feature powerset checks
+        run: just feature-powerset-ci
+
+  cadical-each-feature:
+    name: 🧪 CaDiCaL test each feature
+    runs-on: self-hosted
+    if: contains(github.event.pull_request.labels.*.name, 'solvers/cadical')
+    steps:
+      - uses: actions/checkout@v4
+      - name: 🧪 Test each feature
+        run: just cadical-each-feature-ci
+
+  kissat-each-feature:
+    name: 🧪 Kissat test each feature
+    runs-on: self-hosted
+    if: contains(github.event.pull_request.labels.*.name, 'solvers/cadical')
+    steps:
+      - uses: actions/checkout@v4
+      - name: 🧪 Test each feature
+        run: just kissat-each-feature-ci

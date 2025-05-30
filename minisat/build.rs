@@ -6,6 +6,13 @@ use std::{
 };
 
 fn main() {
+    if std::mem::size_of::<std::ffi::c_int>() != std::mem::size_of::<u32>() {
+        // NOTE: this is required for RustSAT and Minisat literals to have compatible memory
+        // layouts
+        println!("cargo:error=target architecture not supported since `c_int` is not 32 bits");
+        panic!("target architecture not supported since `c_int` is not 32 bits");
+    }
+
     // Build C++ library
     build();
 
@@ -27,7 +34,7 @@ fn main() {
 
     // Generate Rust FFI bindings
     let bindings = bindgen::Builder::default()
-        .rust_target("1.66.1".parse().unwrap()) // Set MSRV of RustSAT
+        .rust_target("1.76.0".parse().unwrap()) // Set MSRV
         .header("cppsrc/minisat/cminisat.h")
         .allowlist_file("cppsrc/minisat/cminisat.h")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))

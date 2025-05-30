@@ -10,15 +10,22 @@
 //! ## Minisat Version
 //!
 //! The version of Minisat in this crate is Version 2.2.0.
-//! The used Cpp source repository can be found [here](https://github.com/chrjabs/minisat).
+//! The used Cpp source can be found
+//! [here](https://github.com/chrjabs/rustsat/tree/main/minisat/cppsrc).
+//!
+//! ## Minimum Supported Rust Version (MSRV)
+//!
+//! Currently, the MSRV is 1.76.0, the plan is to always support an MSRV that is at least a year
+//! old.
+//!
+//! Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+//! sure to pin a precise version of RustSAT.
 
 #![warn(clippy::pedantic)]
 #![warn(missing_docs)]
+#![warn(missing_debug_implementations)]
 
-use rustsat::{
-    solvers::SolverState,
-    types::{Lit, Var},
-};
+use rustsat::{solvers::SolverState, types::Var};
 use std::{ffi::c_int, fmt};
 use thiserror::Error;
 
@@ -47,7 +54,7 @@ enum InternalSolverState {
     Configuring,
     Input,
     Sat,
-    Unsat(Vec<Lit>),
+    Unsat(bool),
 }
 
 impl InternalSolverState {
@@ -101,15 +108,20 @@ pub(crate) mod ffi {
     #![allow(non_camel_case_types)]
     #![allow(non_snake_case)]
 
-    use std::os::raw::{c_int, c_void};
+    use std::os::raw::c_void;
 
     use rustsat::types::Lit;
 
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-    pub extern "C" fn rustsat_minisat_collect_lits(vec: *mut c_void, lit: c_int) {
+    impl From<Lit> for c_Lit {
+        fn from(value: Lit) -> Self {
+            unsafe { std::mem::transmute::<Lit, c_Lit>(value) }
+        }
+    }
+
+    pub extern "C" fn rustsat_minisat_collect_lits(vec: *mut c_void, lit: c_Lit) {
         let vec = vec.cast::<Vec<Lit>>();
-        let lit = Lit::from_ipasir(lit).expect("got invalid IPASIR lit from Minisat");
-        unsafe { (*vec).push(lit) };
+        unsafe { (*vec).push(std::mem::transmute::<c_Lit, Lit>(lit)) };
     }
 }

@@ -1,7 +1,6 @@
-[![Check & Test](https://github.com/chrjabs/rustsat/actions/workflows/minisat.yml/badge.svg)](https://github.com/chrjabs/rustsat/actions/workflows/minisat.yml)
-[![crates.io](https://img.shields.io/crates/v/rustsat-minisat)](https://crates.io/crates/rustsat-minisat)
-[![docs.rs](https://img.shields.io/docsrs/rustsat-minisat)](https://docs.rs/rustsat-minisat)
-[![License](https://img.shields.io/crates/l/rustsat-minisat)](../LICENSE)
+[![crates.io](https://img.shields.io/crates/v/rustsat-minisat?style=for-the-badge&logo=rust)](https://crates.io/crates/rustsat-minisat)
+[![docs.rs](https://img.shields.io/docsrs/rustsat-minisat?style=for-the-badge&logo=docsdotrs)](https://docs.rs/rustsat-minisat)
+[![License](https://img.shields.io/crates/l/rustsat-minisat?style=for-the-badge)](../LICENSE)
 
 <!-- cargo-rdme start -->
 
@@ -17,6 +16,15 @@ The Minisat SAT solver to be used with the [RustSAT](https://github.com/chrjabs/
 ## Minisat Version
 
 The version of Minisat in this crate is Version 2.2.0.
-The used Cpp source repository can be found [here](https://github.com/chrjabs/minisat).
+The used Cpp source can be found
+[here](https://github.com/chrjabs/rustsat/tree/main/minisat/cppsrc).
+
+## Minimum Supported Rust Version (MSRV)
+
+Currently, the MSRV is 1.76.0, the plan is to always support an MSRV that is at least a year
+old.
+
+Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+sure to pin a precise version of RustSAT.
 
 <!-- cargo-rdme end -->

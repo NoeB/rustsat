@@ -120,14 +120,14 @@ impl ManageVars for BasicVarManager {
         if v > self.next_var {
             self.next_var = v;
             return true;
-        };
+        }
         false
     }
 
     fn combine(&mut self, other: Self) {
         if other.next_var > self.next_var {
             self.next_var = other.next_var;
-        };
+        }
     }
 
     fn n_used(&self) -> u32 {
@@ -148,22 +148,24 @@ impl Default for BasicVarManager {
 }
 
 /// Manager for re-indexing an existing instance
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReindexingVarManager {
     next_var: Var,
     in_map: RsHashMap<Var, Var>,
-    out_map: RsHashMap<Var, Var>,
+    out_map: Vec<Var>,
 }
 
 impl ReindexingVarManager {
     /// Creates a new variable manager from a next free variable
+    ///
+    /// Will map all variables below `next_var` with the identity function
     #[must_use]
     pub fn from_next_free(next_var: Var) -> Self {
         Self {
             next_var,
             in_map: RsHashMap::default(),
-            out_map: RsHashMap::default(),
+            out_map: (0..next_var.idx32()).map(Var::new).collect(),
         }
     }
 }
@@ -175,13 +177,16 @@ impl ReindexVars for ReindexingVarManager {
         } else {
             let v = self.new_var();
             self.in_map.insert(in_var, v);
-            self.out_map.insert(v, in_var);
+            self.out_map.push(in_var);
             v
         }
     }
 
     fn reverse(&self, out_var: Var) -> Option<Var> {
-        self.out_map.get(&out_var).copied()
+        if out_var.idx() >= self.out_map.len() {
+            return None;
+        }
+        Some(self.out_map[out_var.idx()])
     }
 }
 
@@ -190,7 +195,7 @@ impl Default for ReindexingVarManager {
         Self {
             next_var: Var::new(0),
             in_map: RsHashMap::default(),
-            out_map: RsHashMap::default(),
+            out_map: Vec::default(),
         }
     }
 }
@@ -214,14 +219,14 @@ impl ManageVars for ReindexingVarManager {
         if v > self.next_var {
             self.next_var = v;
             return true;
-        };
+        }
         false
     }
 
     fn combine(&mut self, other: Self) {
         if other.next_var > self.next_var {
             self.next_var = other.next_var;
-        };
+        }
         self.in_map.extend(other.in_map);
     }
 
@@ -231,13 +236,14 @@ impl ManageVars for ReindexingVarManager {
 
     fn forget_from(&mut self, min_var: Var) {
         self.in_map.retain(|_, v| *v < min_var);
-        self.out_map.retain(|v, _| *v < min_var);
+        self.out_map.truncate(min_var.idx() + 1);
         self.next_var = std::cmp::min(self.next_var, min_var);
     }
 }
 
 /// Manager keeping track of used variables and variables associated with objects
 #[derive(PartialEq, Eq)]
+#[allow(missing_debug_implementations)]
 pub struct ObjectVarManager {
     next_var: Var,
     object_map: RsHashMap<Box<dyn VarKey>, Var>,
@@ -298,14 +304,14 @@ impl ManageVars for ObjectVarManager {
         if v > self.next_var {
             self.next_var = v;
             return true;
-        };
+        }
         false
     }
 
     fn combine(&mut self, other: Self) {
         if other.next_var > self.next_var {
             self.next_var = other.next_var;
-        };
+        }
         self.object_map.extend(other.object_map);
     }
 
@@ -321,7 +327,7 @@ impl ManageVars for ObjectVarManager {
 
 #[cfg(feature = "rand")]
 /// Manager for randomly re-indexing an instance
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RandReindVarManager {
     next_var: Var,
@@ -394,14 +400,14 @@ impl ManageVars for RandReindVarManager {
         if v > self.next_var {
             self.next_var = v;
             return true;
-        };
+        }
         false
     }
 
     fn combine(&mut self, other: Self) {
         if other.next_var > self.next_var {
             self.next_var = other.next_var;
-        };
+        }
         self.in_map.extend(other.in_map);
     }
 

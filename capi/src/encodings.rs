@@ -26,11 +26,17 @@ pub enum MaybeError {
     PrecisionDecreased,
 }
 
-impl From<encodings::Error> for MaybeError {
-    fn from(value: encodings::Error) -> Self {
+impl From<encodings::NotEncoded> for MaybeError {
+    fn from(_: encodings::NotEncoded) -> Self {
+        MaybeError::NotEncoded
+    }
+}
+
+impl From<encodings::EnforceError> for MaybeError {
+    fn from(value: encodings::EnforceError) -> Self {
         match value {
-            encodings::Error::NotEncoded => MaybeError::NotEncoded,
-            encodings::Error::Unsat => MaybeError::Unsat,
+            encodings::EnforceError::NotEncoded => MaybeError::NotEncoded,
+            encodings::EnforceError::Unsat => MaybeError::Unsat,
         }
     }
 }
@@ -153,7 +159,29 @@ impl ManageVars for VarManager<'_> {
     }
 }
 
-pub mod adder;
+/// Implementations of the commander at-most-1 encoding.
+///
+/// The sub encoding is fixed to the pairwise encoding and the size of the splits to 4.
+///
+/// # References
+///
+/// - Will Klieber and Gihwon Kwon: _Efficient CNF Encoding for Selecting 1 from N Objects, CFV
+///   2007.
+#[derive(Default)]
+pub struct Commander(rustsat::encodings::am1::Commander);
+
+/// Implementation of the bimander at-most-1 encoding.
+///
+/// The sub encoding is fixed to the pairwise encoding and the size of the splits to 4.
+///
+/// # References
+///
+/// - Van-Hau Nguyen and Son Thay Mai: _A New Method to Encode the At-Most-One Constraint into SAT,
+///   SOICT 2015.
+#[derive(Default)]
+pub struct Bimander(rustsat::encodings::am1::Bimander);
+
+pub mod am1;
+pub mod card;
 pub mod dpw;
-pub mod gte;
-pub mod totalizer;
+pub mod pb;

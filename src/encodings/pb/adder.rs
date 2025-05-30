@@ -9,9 +9,9 @@
 //! ## References
 //!
 //! - \[1\] Joose P. Warners: _A linear-time transformation of linear inequalities into conjunctive
-//!     normal form_, Inf. Process. Lett. 1998.
+//!   normal form_, Inf. Process. Lett. 1998.
 //! - \[2\] Niklas Eén and Niklas Sörensson: _Translating Pseudo-Boolean Constraints into SAT_,
-//!     JSAT 2006.
+//!   JSAT 2006.
 
 #![allow(clippy::module_name_repetitions)]
 
@@ -19,14 +19,15 @@ use std::collections::VecDeque;
 
 use crate::{
     clause,
-    encodings::{CollectClauses, EncodeStats, Error},
+    encodings::{CollectClauses, EncodeStats, EnforceError, Monotone},
     instances::ManageVars,
     types::{Clause, Lit, RsHashMap},
     OutOfMemory,
 };
 
 use super::{
-    BoundLower, BoundLowerIncremental, BoundUpper, BoundUpperIncremental, Encode, EncodeIncremental,
+    BoundBoth, BoundBothIncremental, BoundLower, BoundLowerIncremental, BoundUpper,
+    BoundUpperIncremental, Encode, EncodeIncremental,
 };
 
 /// Implementation of the binary adder encoding first described in \[1\].
@@ -35,9 +36,9 @@ use super::{
 /// ## References
 ///
 /// - \[1\] Joose P. Warners: _A linear-time transformation of linear inequalities into conjunctive
-///     normal form_, Inf. Process. Lett. 1998.
+///   normal form_, Inf. Process. Lett. 1998.
 /// - \[2\] Niklas Eén and Niklas Sörensson: _Translating Pseudo-Boolean Constraints into SAT_,
-///     JSAT 2006.
+///   JSAT 2006.
 #[derive(Default, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BinaryAdder {
@@ -79,7 +80,7 @@ impl BinaryAdder {
         for (lit, weight) in self.lit_buffer.drain() {
             debug_assert_ne!(weight, 0);
             self.weight_sum += weight;
-            let max_bucket = weight.next_power_of_two();
+            let max_bucket = (usize::BITS - weight.leading_zeros()) as usize;
             if max_bucket >= buckets.len() {
                 buckets.resize_with(max_bucket + 1, || VecDeque::with_capacity(1));
             }
@@ -106,7 +107,8 @@ impl BinaryAdder {
         }
 
         // Build the encoding
-        for idx in 0..buckets.len() {
+        let mut idx = 0;
+        while idx < buckets.len() {
             if idx == buckets.len() - 1 && buckets[idx].len() >= 2 {
                 buckets.resize_with(buckets.len() + 1, || VecDeque::with_capacity(1));
             }
@@ -129,6 +131,7 @@ impl BinaryAdder {
                 buckets[idx].push_back(Connection::Sum(self.nodes.len() - 1));
                 buckets[idx + 1].push_back(Connection::Carry(self.nodes.len() - 1));
             }
+            idx += 1;
         }
 
         // Store the structure
@@ -184,18 +187,18 @@ impl BoundUpper for BinaryAdder {
         self.encode_ub_change(range, collector, var_manager)
     }
 
-    fn enforce_ub(&self, ub: usize) -> Result<Vec<Lit>, Error> {
+    fn enforce_ub(&self, ub: usize) -> Result<Vec<Lit>, EnforceError> {
         if ub >= self.weight_sum() {
             return Ok(vec![]);
         }
         let Some(structure) = &self.structure else {
-            return Err(Error::NotEncoded);
+            return Err(EnforceError::NotEncoded);
         };
         let Some(Some(Output {
             bit, enc_if: true, ..
         })) = structure.comparator.get(ub)
         else {
-            return Err(Error::NotEncoded);
+            return Err(EnforceError::NotEncoded);
         };
         Ok(vec![!*bit])
     }
@@ -297,15 +300,15 @@ impl BoundLower for BinaryAdder {
         self.encode_lb_change(range, collector, var_manager)
     }
 
-    fn enforce_lb(&self, lb: usize) -> Result<Vec<Lit>, Error> {
+    fn enforce_lb(&self, lb: usize) -> Result<Vec<Lit>, EnforceError> {
         if lb > self.weight_sum() {
-            return Err(Error::Unsat);
+            return Err(EnforceError::Unsat);
         }
         if lb == 0 {
             return Ok(vec![]);
         }
         let Some(structure) = &self.structure else {
-            return Err(Error::NotEncoded);
+            return Err(EnforceError::NotEncoded);
         };
         let Some(Some(Output {
             bit,
@@ -313,7 +316,7 @@ impl BoundLower for BinaryAdder {
             ..
         })) = structure.comparator.get(lb - 1)
         else {
-            return Err(Error::NotEncoded);
+            return Err(EnforceError::NotEncoded);
         };
         Ok(vec![*bit])
     }
@@ -384,6 +387,25 @@ impl BoundLowerIncremental for BinaryAdder {
     }
 }
 
+impl BoundBoth for BinaryAdder {
+    fn encode_both<Col, R>(
+        &mut self,
+        range: R,
+        collector: &mut Col,
+        var_manager: &mut dyn ManageVars,
+    ) -> Result<(), crate::OutOfMemory>
+    where
+        Col: CollectClauses,
+        R: std::ops::RangeBounds<usize> + Clone,
+    {
+        self.encode_ub_change(range.clone(), collector, var_manager)?;
+        self.encode_lb_change(range, collector, var_manager)?;
+        Ok(())
+    }
+}
+
+impl BoundBothIncremental for BinaryAdder {}
+
 impl EncodeIncremental for BinaryAdder {
     fn reserve(&mut self, var_manager: &mut dyn ManageVars) {
         self.extend_structure();
@@ -397,6 +419,8 @@ impl EncodeIncremental for BinaryAdder {
         }
     }
 }
+
+impl Monotone for BinaryAdder {}
 
 impl EncodeStats for BinaryAdder {
     fn n_clauses(&self) -> usize {
@@ -433,7 +457,7 @@ impl Extend<(Lit, usize)> for BinaryAdder {
                 None => {
                     self.lit_buffer.insert(l, w);
                 }
-            };
+            }
         });
     }
 }

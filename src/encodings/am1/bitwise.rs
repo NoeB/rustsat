@@ -21,7 +21,7 @@ use crate::{
 /// - Steven D. Prestwich: _Finding large Cliques using SAT Local Search_, in Trends in Constraint
 ///   Programming 2007.
 /// - Steven D. Prestwich: _CNF Encodings_, in Handbook of Satisfiability 2021.
-#[derive(Default)]
+#[derive(Default, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Bitwise {
     /// Input literals
@@ -108,5 +108,24 @@ impl FromIterator<Lit> for Bitwise {
 impl Extend<Lit> for Bitwise {
     fn extend<T: IntoIterator<Item = Lit>>(&mut self, iter: T) {
         self.in_lits.extend(iter);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        encodings::am1::Encode,
+        instances::{BasicVarManager, Cnf, ManageVars},
+        lit, var,
+    };
+
+    #[test]
+    fn basic() {
+        let mut enc: super::Bitwise = [lit![0], lit![1], lit![2], lit![3]].into_iter().collect();
+        let mut cnf = Cnf::new();
+        let mut vm = BasicVarManager::from_next_free(var![4]);
+        enc.encode(&mut cnf, &mut vm).unwrap();
+        assert_eq!(vm.n_used(), 6);
+        assert_eq!(cnf.len(), 8);
     }
 }

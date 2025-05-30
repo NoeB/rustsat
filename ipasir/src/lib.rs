@@ -26,9 +26,18 @@
 //! #[cfg(not(target_os = "macos"))]
 //! println!("cargo:rustc-flags=-l dylib=stdc++");
 //! ```
+//!
+//! ## Minimum Supported Rust Version (MSRV)
+//!
+//! Currently, the MSRV is 1.76.0, the plan is to always support an MSRV that is at least a year
+//! old.
+//!
+//! Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+//! sure to pin a precise version of RustSAT.
 
 #![warn(clippy::pedantic)]
 #![warn(missing_docs)]
+#![warn(missing_debug_implementations)]
 
 use core::ffi::{c_int, c_void, CStr};
 
@@ -86,6 +95,32 @@ pub struct IpasirSolver<'term, 'learn> {
     terminate_cb: OptTermCallbackStore<'term>,
     learner_cb: OptLearnCallbackStore<'learn>,
     stats: SolverStats,
+}
+
+impl std::fmt::Debug for IpasirSolver<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IpasirSolver")
+            .field("handle", &self.handle)
+            .field("state", &self.state)
+            .field(
+                "terminate_cb",
+                if self.terminate_cb.is_some() {
+                    &"some callback"
+                } else {
+                    &"no callback"
+                },
+            )
+            .field(
+                "learner_cb",
+                if self.learner_cb.is_some() {
+                    &"some callback"
+                } else {
+                    &"no callback"
+                },
+            )
+            .field("stats", &self.stats)
+            .finish()
+    }
 }
 
 unsafe impl Send for IpasirSolver<'_, '_> {}

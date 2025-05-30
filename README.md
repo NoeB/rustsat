@@ -1,8 +1,8 @@
-[![Build & Test](https://github.com/chrjabs/rustsat/actions/workflows/rustsat.yml/badge.svg)](https://github.com/chrjabs/rustsat/actions/workflows/rustsat.yml)
-[![crates.io](https://img.shields.io/crates/v/rustsat)](https://crates.io/crates/rustsat)
-[![docs.rs](https://img.shields.io/docsrs/rustsat)](https://docs.rs/rustsat)
-[![PyPI](https://img.shields.io/pypi/v/rustsat)](https://pypi.org/project/rustsat)
-[![License](https://img.shields.io/crates/l/rustsat)](./LICENSE)
+[![crates.io](https://img.shields.io/crates/v/rustsat?style=for-the-badge&logo=rust)](https://crates.io/crates/rustsat)
+[![docs.rs](https://img.shields.io/docsrs/rustsat?style=for-the-badge&logo=docsdotrs)](https://docs.rs/rustsat)
+[![Coveralls](https://img.shields.io/coverallsCoverage/github/chrjabs/rustsat?style=for-the-badge&logo=coveralls)](https://coveralls.io/github/chrjabs/rustsat)
+[![PyPI](https://img.shields.io/pypi/v/rustsat?style=for-the-badge&logo=pypi&logoColor=%23ffffff)](https://pypi.org/project/rustsat)
+[![License](https://img.shields.io/crates/l/rustsat?style=for-the-badge)](./LICENSE)
 
 <!-- cargo-rdme start -->
 
@@ -22,7 +22,7 @@ instance.add_binary(l1, l2);
 instance.add_binary(!l1, l2);
 instance.add_unit(l1);
 let mut solver = rustsat_minisat::core::Minisat::default();
-solver.add_cnf(instance.as_cnf().0).unwrap();
+solver.add_cnf(instance.into_cnf().0).unwrap();
 let res = solver.solve().unwrap();
 assert_eq!(res, SolverResult::Sat);
 let sol = solver.full_solution().unwrap();
@@ -41,6 +41,21 @@ These are the crates the project consists of:
 | `rustsat-tools` | A collection of small helpful tools based on RustSAT that can be installed as binaries. For a list of available tools, see [this directory](https://github.com/chrjabs/rustsat/tree/main/tools/src/bin) with short descriptions of the tools in the headers of the files. |
 | `rustsat-<satsolver>` | Interfaces to SAT solvers that can be used alongside RustSAT. Currently interfaces are available for `cadical`, `kissat`, `glucose`, and `minisat`. |
 | `rustsat-ipasir` | [IPASIR](https://github.com/biotomas/ipasir) bindings to use any compliant solver with RustSAT. |
+| `pigeons` | A library for writing [VeriPB](https://gitlab.com/MIAOresearch/software/VeriPB) proofs. Used by RustSAT with the `proof-logging` feature. |
+
+## Citing
+
+If you use RustSAT in your research, please cite the following system description paper.
+
+```bibtex
+@misc{Jabs2025RustsatLibrarySat,
+  title       = {{RustSAT}: {A} Library For {SAT} Solving in Rust},
+  author      = {Jabs, Christoph},
+  year        = {2025},
+  eprint      = {2505.15221},
+  url         = {https://arxiv.org/abs/2505.15221},
+}
+```
 
 ## Installation
 
@@ -61,6 +76,8 @@ To install the binary tools in `rustsat-tools` run `cargo install rustsat-tools`
 | `rand` | Enable randomization features. (Shuffling clauses etc.) |
 | `ipasir-display` | Changes `Display` trait for `Lit` and `Var` types to follow IPASIR variables indexing. |
 | `serde` | Add implementations for [`serde::Serialize`](https://docs.rs/serde/latest/serde/trait.Serialize.html) and [`serde::Deserialize`](https://docs.rs/serde/latest/serde/trait.Deserialize.html) for many library types |
+| `proof-logging` | Add proof logging / certification support to constraint encodings |
+| `verbose-proofs` | Make the generated proofs (see `proof-logging`) more verbose, for debugging and testing |
 | `bench` | Enable benchmark tests. Behind feature flag since it requires unstable Rust. |
 | `internals` | Make some internal data structures for e.g. encodings public. This is useful when basing a more complex encoding on the RustSAT implementation of another encoding. Note that the internal API might change between releases. |
 
@@ -71,7 +88,20 @@ crate](https://crates.io/crates/rustsat_tools) at `tools/src/bin`. For a bigger
 example you can look at this [multi-objective optimization
 solver](https://github.com/chrjabs/scuttle).
 
+## Minimum Supported Rust Version (MSRV)
+
+Currently, the MSRV of RustSAT is 1.76.0, the plan is to always support an MSRV that is at
+least a year old.
+
+Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+sure to pin a precise version of RustSAT.
+
 <!-- cargo-rdme end -->
+
+## Main Branch Documentation
+
+The API documentation of the main branch can be found
+[here](https://christophjabs.info/rustsat/main/rustsat/).
 
 ## Python Bindings
 

@@ -129,7 +129,7 @@ pub struct Solver {
 
 #[derive(Debug)]
 enum SolverState {
-    Pre(SolverPre),
+    Pre(Box<SolverPre>),
     Post(fio::SolverOutput),
 }
 
@@ -149,11 +149,11 @@ impl Solver {
     /// # Notes
     ///
     /// - If input is passed via a file with a path that ends in a compression extension, RustSAT
-    ///     will write a compressed file
+    ///   will write a compressed file
     /// - If the solver output is processed via a file, compression is _not_ supported
     /// - If [`Command::env_clear`] was called on the command and the input is passed via a
-    ///     file as the first argument, the fact that the environment has been cleared might be
-    ///     forgotten
+    ///   file as the first argument, the fact that the environment has been cleared might be
+    ///   forgotten
     ///
     /// # Example
     ///
@@ -172,13 +172,13 @@ impl Solver {
     pub fn new(cmd: Command, input: InputVia, output: OutputVia, signature: &'static str) -> Self {
         Solver {
             signature,
-            state: SolverState::Pre(SolverPre {
+            state: SolverState::Pre(Box::new(SolverPre {
                 cmd,
                 input,
                 output,
                 cnf: Cnf::default(),
                 n_vars: 0,
-            }),
+            })),
         }
     }
 
@@ -225,7 +225,7 @@ impl Solve for Solver {
         else {
             unreachable!()
         };
-        let post = call_external(config)?;
+        let post = call_external(*config)?;
         let res = post.result();
         self.state = SolverState::Post(post);
         Ok(res)
@@ -303,7 +303,7 @@ macro_rules! check_exit_code {
     ($status:expr) => {
         match $status.code() {
             // these are the expected return codes for SAT solvers
-            // we don't check them against the ouput though
+            // we don't check them against the output though
             Some(0 | 10 | 20) => (),
             Some(x) => anyhow::bail!("solver returned unexpected code {x}"),
             None => anyhow::bail!("solver process terminated by signal"),
@@ -380,7 +380,7 @@ fn call_external(config: SolverPre) -> anyhow::Result<SolverOutput> {
             }
         }
     };
-    // case input pipe handeled above
+    // case input pipe handled above
     let output = match config.output.0 {
         OutputViaInt::File(path) => {
             // pipe output into file

@@ -7,31 +7,81 @@
 //! # BatSat Version
 //!
 //! The version of BatSat in this crate is Version 0.6.0.
+//!
+//! ## Minimum Supported Rust Version (MSRV)
+//!
+//! Currently, the MSRV is 1.76.0, the plan is to always support an MSRV that is at least a year
+//! old.
+//!
+//! Bumps in the MSRV will _not_ be considered breaking changes. If you need a specific MSRV, make
+//! sure to pin a precise version of RustSAT.
+
+// NOTE: For some reason, batsat flipped the memory representation of the sign bit in the literal
+// representation compared to Minisat and therefore RustSAT
+// https://github.com/c-cube/batsat/commit/8563ae6e3a59478a0d414fe647d99ad9b989841f
+// For this reason we cannot transmute RustSAT literals to batsat literals and we have to recreate
+// the literals through batsat's API
 
 #![warn(clippy::pedantic)]
 #![warn(missing_docs)]
+#![warn(missing_debug_implementations)]
 
 use std::time::Duration;
 
 use batsat::{intmap::AsIndex, lbool, Callbacks, SolverInterface};
 use cpu_time::ProcessTime;
 use rustsat::{
-    solvers::{Solve, SolveIncremental, SolveStats, SolverResult, SolverStats},
+    solvers::{
+        Solve, SolveIncremental, SolveStats, SolverResult, SolverState, SolverStats, StateError,
+    },
     types::{Cl, Clause, Lit, TernaryVal, Var},
 };
 
 /// RustSAT wrapper for [`batsat::BasicSolver`]
 pub type BasicSolver = Solver<batsat::BasicCallbacks>;
 
+#[derive(Debug, PartialEq, Eq, Default)]
+enum InternalSolverState {
+    #[default]
+    Input,
+    Sat,
+    Unsat(bool),
+}
+
+impl InternalSolverState {
+    fn to_external(&self) -> SolverState {
+        match self {
+            InternalSolverState::Input => SolverState::Input,
+            InternalSolverState::Sat => SolverState::Sat,
+            InternalSolverState::Unsat(_) => SolverState::Unsat,
+        }
+    }
+}
+
 /// RustSAT wrapper for a [`batsat::Solver`] Solver from BatSat
 #[derive(Default)]
 pub struct Solver<Cb: Callbacks> {
     internal: batsat::Solver<Cb>,
+    state: InternalSolverState,
     n_sat: usize,
     n_unsat: usize,
     n_terminated: usize,
     avg_clause_len: f32,
     cpu_time: Duration,
+}
+
+impl<Cb: Callbacks> std::fmt::Debug for Solver<Cb> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Solver")
+            .field("internal", &"omitted")
+            .field("state", &self.state)
+            .field("n_sat", &self.n_sat)
+            .field("n_unsat", &self.n_unsat)
+            .field("n_terminated", &self.n_terminated)
+            .field("avg_clause_len", &self.avg_clause_len)
+            .field("cpu_time", &self.cpu_time)
+            .finish()
+    }
 }
 
 impl<Cb: Callbacks> Solver<Cb> {
@@ -56,23 +106,26 @@ impl<Cb: Callbacks> Solver<Cb> {
     }
 
     fn solve_track_stats(&mut self, assumps: &[Lit]) -> SolverResult {
-        let a = assumps
+        let assumps = assumps
             .iter()
-            .map(|l| batsat::Lit::new(self.internal.var_of_int(l.vidx32() + 1), l.is_pos()))
+            .map(|l| batsat::Lit::new(self.internal.var_of_int(l.vidx32()), l.is_pos()))
             .collect::<Vec<_>>();
 
         let start = ProcessTime::now();
-        let ret = match self.internal.solve_limited(&a) {
+        let ret = match self.internal.solve_limited(&assumps) {
             x if x == lbool::TRUE => {
                 self.n_sat += 1;
+                self.state = InternalSolverState::Sat;
                 SolverResult::Sat
             }
             x if x == lbool::FALSE => {
                 self.n_unsat += 1;
+                self.state = InternalSolverState::Unsat(!assumps.is_empty());
                 SolverResult::Unsat
             }
             x if x == lbool::UNDEF => {
                 self.n_terminated += 1;
+                self.state = InternalSolverState::Input;
                 SolverResult::Interrupted
             }
             _ => unreachable!(),
@@ -108,13 +161,30 @@ impl<Cb: Callbacks> Solve for Solver<Cb> {
     }
 
     fn solve(&mut self) -> anyhow::Result<SolverResult> {
+        // If already solved, return state
+        if let InternalSolverState::Sat = self.state {
+            return Ok(SolverResult::Sat);
+        }
+        if let InternalSolverState::Unsat(under_assumps) = &self.state {
+            if !under_assumps {
+                return Ok(SolverResult::Unsat);
+            }
+        }
         Ok(self.solve_track_stats(&[]))
     }
 
     fn lit_val(&self, lit: Lit) -> anyhow::Result<TernaryVal> {
-        let l = batsat::Lit::new(batsat::Var::from_index(lit.vidx() + 1), lit.is_pos());
+        if self.state != InternalSolverState::Sat {
+            return Err(StateError {
+                required_state: SolverState::Sat,
+                actual_state: self.state.to_external(),
+            }
+            .into());
+        }
 
-        match self.internal.value_lit(l) {
+        let lit = batsat::Lit::new(batsat::Var::from_index(lit.vidx()), lit.is_pos());
+
+        match self.internal.value_lit(lit) {
             x if x == lbool::TRUE => Ok(TernaryVal::True),
             x if x == lbool::FALSE => Ok(TernaryVal::False),
             x if x == lbool::UNDEF => Ok(TernaryVal::DontCare),
@@ -129,13 +199,20 @@ impl<Cb: Callbacks> Solve for Solver<Cb> {
         let clause = clause.as_ref();
         self.update_avg_clause_len(clause);
 
-        let mut c: Vec<_> = clause
+        let mut clause: Vec<_> = clause
             .iter()
-            .map(|l| batsat::Lit::new(self.internal.var_of_int(l.vidx32() + 1), l.is_pos()))
+            .map(|l| batsat::Lit::new(self.internal.var_of_int(l.vidx32()), l.is_pos()))
             .collect();
 
-        self.internal.add_clause_reuse(&mut c);
+        self.internal.add_clause_reuse(&mut clause);
 
+        Ok(())
+    }
+
+    fn reserve(&mut self, max_var: Var) -> anyhow::Result<()> {
+        while self.internal.num_vars() <= max_var.idx32() {
+            self.internal.new_var_default();
+        }
         Ok(())
     }
 }
@@ -146,12 +223,25 @@ impl<Cb: Callbacks> SolveIncremental for Solver<Cb> {
     }
 
     fn core(&mut self) -> anyhow::Result<Vec<Lit>> {
-        Ok(self
-            .internal
-            .unsat_core()
-            .iter()
-            .map(|l| Lit::new(l.var().idx() - 1, !l.sign()))
-            .collect::<Vec<_>>())
+        match &self.state {
+            InternalSolverState::Unsat(under_assumps) => {
+                if *under_assumps {
+                    Ok(self
+                        .internal
+                        .unsat_core()
+                        .iter()
+                        .map(|l| Lit::new(l.var().idx(), !l.sign()))
+                        .collect::<Vec<_>>())
+                } else {
+                    Ok(vec![])
+                }
+            }
+            other => Err(StateError {
+                required_state: SolverState::Unsat,
+                actual_state: other.to_external(),
+            }
+            .into()),
+        }
     }
 }
 
@@ -187,8 +277,7 @@ impl<Cb: Callbacks> SolveStats for Solver<Cb> {
     fn max_var(&self) -> Option<Var> {
         let num = self.internal.num_vars();
         if num > 0 {
-            // BatSat returns a value that is off by one
-            Some(Var::new(num - 2))
+            Some(Var::new(num - 1))
         } else {
             None
         }
@@ -205,5 +294,9 @@ impl<Cb: Callbacks> SolveStats for Solver<Cb> {
 
 #[cfg(test)]
 mod test {
-    rustsat_solvertests::basic_unittests!(super::BasicSolver, false);
+    rustsat_solvertests::basic_unittests!(
+        super::BasicSolver,
+        "BatSat [major].[minor].[patch]",
+        false
+    );
 }
