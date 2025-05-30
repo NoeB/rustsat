@@ -1,38 +1,38 @@
 [submodule "cryptominisat/cppsrc/scripts/build_scripts"]
 	path = cryptominisat/cppsrc/scripts/build_scripts
-	url = https://github.com/msoos/cryptominisat_build.git
-[submodule "cryptominisat/utils/OutputCheck"]
-	path = cryptominisat/utils/OutputCheck
+	url = https://github.com/msoos/cryptominisat/cppsrc_build.git
+[submodule "cryptominisat/cppsrc/utils/OutputCheck"]
+	path = cryptominisat/cppsrc/utils/OutputCheck
 	url = https://github.com/stp/OutputCheck.git
-[submodule "cryptominisat/utils/gtest"]
-	path = cryptominisat/utils/gtest
+[submodule "cryptominisat/cppsrc/utils/gtest"]
+	path = cryptominisat/cppsrc/utils/gtest
 	url = https://github.com/stp/googletest.git
-[submodule "cryptominisat/utils/cnf-utils"]
-	path = cryptominisat/utils/cnf-utils
+[submodule "cryptominisat/cppsrc/utils/cnf-utils"]
+	path = cryptominisat/cppsrc/utils/cnf-utils
 	url = https://github.com/msoos/cnf-utils.git
-[submodule "cryptominisat/utils/sha1-sat"]
-	path = cryptominisat/utils/sha1-sat
+[submodule "cryptominisat/cppsrc/utils/sha1-sat"]
+	path = cryptominisat/cppsrc/utils/sha1-sat
 	url = https://github.com/msoos/sha1-sat.git
-[submodule "cryptominisat/utils/licensecheck"]
-	path = cryptominisat/utils/licensecheck
+[submodule "cryptominisat/cppsrc/utils/licensecheck"]
+	path = cryptominisat/cppsrc/utils/licensecheck
 	url = https://github.com/msoos/licensecheck.git
-[submodule "cryptominisat/utils/minisat_only_elim_and_subsume"]
-	path = cryptominisat/utils/minisat_only_elim_and_subsume
+[submodule "cryptominisat/cppsrc/utils/minisat_only_elim_and_subsume"]
+	path = cryptominisat/cppsrc/utils/minisat_only_elim_and_subsume
 	url = https://github.com/msoos/minisat
 	branch = only_elim_and_subsume
-[submodule "cryptominisat/tests/simp-checks/simplifiy_testfiles"]
-	path = cryptominisat/tests/simp-checks/simplifiy_testfiles
+[submodule "cryptominisat/cppsrc/tests/simp-checks/simplifiy_testfiles"]
+	path = cryptominisat/cppsrc/tests/simp-checks/simplifiy_testfiles
 	url = https://github.com/msoos/simplifiy_testfiles
-[submodule "cryptominisat/utils/minisat"]
-	path = cryptominisat/utils/minisat
+[submodule "cryptominisat/cppsrc/utils/minisat"]
+	path = cryptominisat/cppsrc/utils/minisat
 	url = https://github.com/msoos/minisat
 	branch = fuzzer
-[submodule "cryptominisat/tests/xor_cnf_tests"]
-	path = cryptominisat/tests/xor_cnf_tests
+[submodule "cryptominisat/cppsrc/tests/xor_cnf_tests"]
+	path = cryptominisat/cppsrc/tests/xor_cnf_tests
 	url = https://github.com/msoos/xor_testfiles.git
-[submodule "cryptominisat/tests/pbsugar"]
-	path = cryptominisat/tests/pbsugar
+[submodule "cryptominisat/cppsrc/tests/pbsugar"]
+	path = cryptominisat/cppsrc/tests/pbsugar
 	url = https://github.com/msoos/pbsugar
-[submodule "cryptominisat/utils/lingeling-ala"]
-	path = cryptominisat/utils/lingeling-ala
+[submodule "cryptominisat/cppsrc/utils/lingeling-ala"]
+	path = cryptominisat/cppsrc/utils/lingeling-ala
 	url = https://github.com/msoos/lingeling-ala/
