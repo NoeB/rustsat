@@ -26,7 +26,7 @@ fn main() {
 
     // Generate Rust FFI bindings
     let bindings = bindgen::Builder::default()
-        .rust_target("1.66.1".parse().unwrap()) // Set MSRV of RustSAT
+        .rust_target("1.77.0".parse().unwrap()) // Set MSRV
         .header("cppsrc/src/cryptominisat_c.h")
         .allowlist_file("cppsrc/src/cryptominisat_c.h")
         .blocklist_function("cmsat_print_stats")
@@ -45,6 +45,20 @@ fn main() {
 
 fn build() {
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let submodule_path = Path::new(&crate_dir).join("cppsrc");
+    if !submodule_path.exists()
+        || submodule_path
+            .read_dir()
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(true)
+    {
+        let status = std::process::Command::new("git")
+            .args(["submodule", "update", "--init"])
+            .current_dir(&crate_dir)
+            .status()
+            .expect("Failed to run git submodule update --init");
+        assert!(status.success(), "git submodule update --init failed");
+    }
     let mut cms_dir_str = crate_dir.clone();
     cms_dir_str.push_str("/cppsrc");
     let cms_dir = Path::new(&cms_dir_str);
