@@ -1,6 +1,6 @@
 [submodule "cryptominisat/cppsrc/scripts/build_scripts"]
 	path = cryptominisat/cppsrc/scripts/build_scripts
-	url = https://github.com/msoos/cryptominisat/cppsrc_build.git
+	url = https://github.com/msoos/cryptominisat/cryptominisat_build.git
 [submodule "cryptominisat/cppsrc/utils/OutputCheck"]
 	path = cryptominisat/cppsrc/utils/OutputCheck
 	url = https://github.com/stp/OutputCheck.git
